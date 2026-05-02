@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>JD Analyzer</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>JD Analyzer</h1>
+      <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+    </header>
+
+    <div id="not-configured" class="state hidden">
+      <p>👋 Welcome! Before you start, please configure:</p>
+      <ul>
+        <li>Choose an AI provider</li>
+        <li>Enter your API key</li>
+        <li>Upload or paste your resume</li>
+      </ul>
+      <button id="open-options" class="primary-btn">Open Settings</button>
+    </div>
+
+    <!-- First-time onboarding tour -->
+    <div id="onboarding" class="state hidden">
+      <div class="onboarding-progress">
+        <span class="step-dot active" data-step="1"></span>
+        <span class="step-dot" data-step="2"></span>
+        <span class="step-dot" data-step="3"></span>
+        <span class="step-dot" data-step="4"></span>
+      </div>
+
+      <div class="onboarding-step" data-step="1">
+        <div class="onboarding-icon">👋</div>
+        <h3>Welcome to JD Analyzer!</h3>
+        <p>A 30-second tour so you know what to do.</p>
+      </div>
+
+      <div class="onboarding-step hidden" data-step="2">
+        <div class="onboarding-icon">📋</div>
+        <h3>Step 1: Copy a JD</h3>
+        <p>Open any job posting (LinkedIn, Seek, Indeed, company sites...).</p>
+        <p>Select the job description text and copy it (Cmd/Ctrl+C).</p>
+      </div>
+
+      <div class="onboarding-step hidden" data-step="3">
+        <div class="onboarding-icon">🔍</div>
+        <h3>Step 2: Paste & Analyze</h3>
+        <p>Paste the JD into the text box, then click <strong>Analyze</strong>.</p>
+        <p>You'll get a match score, keywords, strengths, and skill gaps.</p>
+      </div>
+
+      <div class="onboarding-step hidden" data-step="4">
+        <div class="onboarding-icon">✨</div>
+        <h3>Step 3: Generate Materials</h3>
+        <p>Use the three tabs after analysis:</p>
+        <ul class="onboarding-list">
+          <li>✍️ <strong>Cover Letter</strong> — streamed in English</li>
+          <li>📝 <strong>Resume Tips</strong> — concrete rewrites + ATS score</li>
+          <li>🎤 <strong>Interview</strong> — 8 technical + 2 behavioral questions</li>
+        </ul>
+      </div>
+
+      <div class="onboarding-actions">
+        <button id="onboarding-skip" class="text-btn">Skip</button>
+        <button id="onboarding-next" class="primary-btn small-btn">Next →</button>
+      </div>
+    </div>
+
+    <div id="paste" class="state hidden">
+      <p class="instruction">
+        📋 On any job site, <strong>select the JD text → Cmd+C → paste below</strong>
+      </p>
+      <textarea id="jd-input" maxlength="20000" placeholder="Paste the job description here..."></textarea>
+      <div class="char-count" id="char-count">0 characters</div>
+      <div class="provider-tag" id="provider-tag"></div>
+      <button id="analyze-btn" class="primary-btn">🔍 Analyze</button>
+      <p class="cost-hint">Each analysis costs ~$0.01–0.03 on your provider account.</p>
+    </div>
+
+    <div id="loading" class="state hidden">
+      <div class="spinner"></div>
+      <p id="loading-msg">AI is analyzing the JD...</p>
+      <p class="hint">Usually takes 5-15 seconds</p>
+    </div>
+
+    <div id="error" class="state hidden">
+      <div class="error-card">
+        <div class="error-icon" id="error-icon">⚠️</div>
+        <div class="error-title" id="error-title">Something went wrong</div>
+        <div class="error-msg" id="error-msg"></div>
+        <div class="error-hint" id="error-hint"></div>
+      </div>
+      <div class="error-actions">
+        <button id="error-settings-btn" class="secondary-btn hidden">Open Settings</button>
+        <button id="error-retry-btn" class="secondary-btn hidden">Retry</button>
+        <button id="retry-btn" class="secondary-btn">Back</button>
+      </div>
+    </div>
+
+    <div id="result" class="state hidden">
+      <!-- Score card -->
+      <div class="score-card">
+        <div class="score-label">Match Score</div>
+        <div class="score-value" id="score-value">--</div>
+        <div class="detected-info" id="detected-info"></div>
+        <div class="score-reasoning" id="score-reasoning"></div>
+        <div class="score-breakdown" id="score-breakdown"></div>
+        <div class="score-disclaimer">For reference · Computed from a 4-dimension rubric</div>
+      </div>
+
+      <!-- Keywords -->
+      <section class="result-section">
+        <h2>📌 JD Keywords</h2>
+        <div class="tag-list" id="keywords"></div>
+      </section>
+
+      <!-- Strengths -->
+      <section class="result-section">
+        <h2>✅ Your Strengths</h2>
+        <ul id="strengths"></ul>
+      </section>
+
+      <!-- Missing skills -->
+      <section class="result-section">
+        <h2>📉 Gaps to Bridge</h2>
+        <div id="missing-skills"></div>
+      </section>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="cl">✍️ Cover Letter</button>
+        <button class="tab-btn" data-tab="tips">📝 Resume Tips</button>
+        <button class="tab-btn" data-tab="interview">🎤 Interview</button>
+      </div>
+
+      <!-- Cover Letter -->
+      <section class="tab-panel active" id="tab-cl">
+        <div id="cl-empty">
+          <p class="hint">3 concise paragraphs, English output, with a typewriter streaming effect.</p>
+          <button id="generate-cl-btn" class="primary-btn">Generate Cover Letter</button>
+        </div>
+        <div id="cl-streaming" class="hidden">
+          <div class="cl-text streaming" id="cl-text-streaming"></div>
+          <p class="hint streaming-hint">Generating...</p>
+        </div>
+        <div id="cl-result" class="hidden">
+          <div class="cl-text" id="cl-text"></div>
+          <div class="cl-actions">
+            <button id="copy-cl-btn" class="secondary-btn">📋 Copy</button>
+            <button id="regen-cl-btn" class="secondary-btn">🔄 Regenerate</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resume Tips -->
+      <section class="tab-panel" id="tab-tips">
+        <div id="tips-empty">
+          <p class="hint">4-6 concrete rewrite suggestions plus an ATS-friendliness score.</p>
+          <button id="generate-tips-btn" class="primary-btn">Generate Resume Tips</button>
+        </div>
+        <div id="tips-loading" class="hidden">
+          <div class="spinner small"></div>
+          <p class="hint">Analyzing...</p>
+        </div>
+        <div id="tips-result" class="hidden">
+          <div class="ats-card">
+            <div class="ats-label">ATS-Friendliness</div>
+            <div class="ats-score" id="ats-score">--</div>
+            <div class="ats-issues" id="ats-issues"></div>
+          </div>
+          <div class="tips-summary" id="tips-summary"></div>
+          <div id="tips-list"></div>
+        </div>
+      </section>
+
+      <!-- Interview Questions -->
+      <section class="tab-panel" id="tab-interview">
+        <div id="interview-empty">
+          <p class="hint">Predicts 8 technical + 2 behavioral questions based on the JD and your resume.</p>
+          <button id="generate-interview-btn" class="primary-btn">Generate Interview Questions</button>
+        </div>
+        <div id="interview-loading" class="hidden">
+          <div class="spinner small"></div>
+          <p class="hint">Predicting...</p>
+        </div>
+        <div id="interview-result" class="hidden">
+          <h3 class="qa-section-title">💻 Technical Questions</h3>
+          <div id="technical-questions"></div>
+          <h3 class="qa-section-title">💬 Behavioral Questions</h3>
+          <div id="behavioral-questions"></div>
+        </div>
+      </section>
+
+      <button id="back-btn" class="secondary-btn">← Analyze Another JD</button>
+    </div>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

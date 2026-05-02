@@ -1,0 +1,241 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: #f8f9fb;
+  color: #1a1a1a;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 24px;
+}
+
+.container { max-width: 720px; margin: 0 auto; }
+
+h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #0a66c2;
+  margin-bottom: 24px;
+}
+
+.card {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 16px;
+}
+.card.hidden { display: none; }
+
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+  margin: 12px 0 6px;
+}
+
+input[type="password"], input[type="text"], select, textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #0a66c2;
+}
+
+textarea {
+  resize: vertical;
+  font-family: "SF Mono", Monaco, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hint { font-size: 12px; color: #6b7280; margin: 6px 0; }
+.hint a { color: #0a66c2; text-decoration: none; }
+.hint a:hover { text-decoration: underline; }
+
+.radio-group { display: flex; gap: 16px; }
+
+.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  flex: 1;
+  transition: all 0.15s;
+}
+
+.radio-group label:has(input:checked) {
+  border-color: #0a66c2;
+  background: #eff6ff;
+  color: #0a66c2;
+  font-weight: 500;
+}
+
+.radio-group input[type="radio"] { cursor: pointer; }
+
+/* File upload area */
+.upload-area {
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: #fafbfc;
+}
+
+.upload-area:hover {
+  border-color: #0a66c2;
+  background: #f0f7ff;
+}
+
+.upload-area.dragover {
+  border-color: #0a66c2;
+  background: #dbeafe;
+}
+
+.upload-area.success {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.upload-area.error {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.upload-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.upload-prompt strong {
+  font-size: 14px;
+  color: #374151;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.upload-status {
+  font-size: 14px;
+}
+
+.upload-status .file-name {
+  font-weight: 500;
+  color: #1a1a1a;
+}
+
+.upload-status .file-meta {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.upload-status .upload-error {
+  color: #b91c1c;
+  font-size: 13px;
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+.upload-status.hidden { display: none; }
+
+.manual-edit {
+  margin-top: 14px;
+}
+
+.manual-edit summary {
+  cursor: pointer;
+  color: #0a66c2;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 0;
+}
+
+.manual-edit summary:hover { text-decoration: underline; }
+
+.manual-edit textarea { margin-top: 10px; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.primary-btn {
+  padding: 10px 24px;
+  background: #0a66c2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.primary-btn:hover { background: #084d92; }
+
+#save-status {
+  font-size: 13px;
+  color: #15803d;
+  font-weight: 500;
+}
+
+.settings-footer {
+  margin-top: 32px;
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+.settings-footer p {
+  margin-bottom: 8px;
+}
+
+.settings-footer strong {
+  color: #1a1a1a;
+}
+
+.footer-links {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.footer-links a {
+  color: #0a66c2;
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  text-decoration: underline;
+}
+
+.footer-links span {
+  color: #9ca3af;
+}
