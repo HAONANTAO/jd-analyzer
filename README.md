@@ -7,6 +7,8 @@
 [![Chrome](https://img.shields.io/badge/Chrome-MV3-green.svg)](manifest.json)
 [![Privacy](https://img.shields.io/badge/Privacy-Local--First-success.svg)](PRIVACY.md)
 
+![JD Analyzer demo](demo.gif)
+
 A privacy-first Chrome extension for job seekers. Open any job posting, click *Auto-fill*, and get an actionable analysis powered by your own AI provider — no backend, no tracking, no ads.
 
 ## ✨ Features
