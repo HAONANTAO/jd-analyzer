@@ -605,3 +605,111 @@ textarea:focus { outline: none; border-color: #0a66c2; }
   width: 100%;
   margin-top: 16px;
 }
+
+/* ============== v1.1 additions ============== */
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.banner-warn {
+  background: #fef3c7;
+  color: #78350f;
+  border-left: 3px solid #d97706;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #0a66c2;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+.link-btn:hover { color: #084d92; }
+
+.paste-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.small-btn {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.cost-display {
+  font-size: 11px;
+  color: #6b7280;
+  text-align: center;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.cost-display.hidden { display: none; }
+
+.recent-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+.recent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.recent-header h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.recent-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  background: white;
+  transition: all 0.15s;
+}
+.recent-item:hover {
+  border-color: #0a66c2;
+  background: #f8fbff;
+}
+.recent-item .recent-meta {
+  flex: 1;
+  min-width: 0;
+}
+.recent-item .recent-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-item .recent-sub {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+.recent-item .recent-score {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0a66c2;
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}

@@ -69,14 +69,32 @@
     </div>
 
     <div id="paste" class="state hidden">
+      <div id="resume-stale-banner" class="banner banner-warn hidden">
+        <span>⚠️ Your resume was last updated <strong id="resume-stale-days">--</strong> days ago.</span>
+        <button id="resume-stale-update" class="link-btn">Update it →</button>
+      </div>
+
       <p class="instruction">
-        📋 On any job site, <strong>select the JD text → Cmd+C → paste below</strong>
+        📋 Auto-fill from a job page, or paste the JD text below.
       </p>
+
+      <div class="paste-actions">
+        <button id="auto-fill-btn" class="secondary-btn small-btn">📋 Auto-fill from this tab</button>
+      </div>
+
       <textarea id="jd-input" maxlength="20000" placeholder="Paste the job description here..."></textarea>
       <div class="char-count" id="char-count">0 characters</div>
       <div class="provider-tag" id="provider-tag"></div>
       <button id="analyze-btn" class="primary-btn">🔍 Analyze</button>
       <p class="cost-hint">Each analysis costs ~$0.01–0.03 on your provider account.</p>
+
+      <div id="recent-section" class="recent-section hidden">
+        <div class="recent-header">
+          <h3>Recent</h3>
+          <button id="clear-history-btn" class="link-btn">Clear</button>
+        </div>
+        <div id="recent-list"></div>
+      </div>
     </div>
 
     <div id="loading" class="state hidden">
@@ -108,6 +126,7 @@
         <div class="score-reasoning" id="score-reasoning"></div>
         <div class="score-breakdown" id="score-breakdown"></div>
         <div class="score-disclaimer">For reference · Computed from a 4-dimension rubric</div>
+        <div class="cost-display hidden" id="cost-display"></div>
       </div>
 
       <!-- Keywords -->

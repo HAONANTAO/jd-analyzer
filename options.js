@@ -97,7 +97,7 @@ async function loadSettings() {
   switchProvider(provider);
 
   document.getElementById("claude-api-key").value = saved.claudeApiKey || "";
-  document.getElementById("claude-model").value = saved.claudeModel || "claude-sonnet-4-5";
+  document.getElementById("claude-model").value = saved.claudeModel || "claude-sonnet-4-6";
   document.getElementById("openai-api-key").value = saved.openaiApiKey || "";
   document.getElementById("openai-model").value = saved.openaiModel || "gpt-4o-mini";
   document.getElementById("resume").value = saved.resume || "";
@@ -139,6 +139,12 @@ async function saveSettings() {
     return;
   }
 
+  // Only bump resumeUpdatedAt when the resume text actually changed.
+  const prev = await chrome.storage.local.get(["resume", "resumeUpdatedAt"]);
+  const resumeUpdatedAt = (prev.resume === resume && prev.resumeUpdatedAt)
+    ? prev.resumeUpdatedAt
+    : Date.now();
+
   const data = {
     provider,
     claudeApiKey: claudeKey,
@@ -146,7 +152,8 @@ async function saveSettings() {
     openaiApiKey: openaiKey,
     openaiModel: document.getElementById("openai-model").value,
     resume,
-    resumeFileName: fileName
+    resumeFileName: fileName,
+    resumeUpdatedAt
   };
 
   await chrome.storage.local.set(data);

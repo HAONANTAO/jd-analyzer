@@ -1,4 +1,4 @@
-// background.js v0.9
+// background.js v1.1
 import { callClaude, callClaudeStream } from "./lib/claudeProvider.js";
 import { callOpenAI, callOpenAIStream } from "./lib/openaiProvider.js";
 import {
@@ -12,71 +12,116 @@ import {
   buildInterviewPrompt
 } from "./lib/prompts.js";
 import { AppError, ErrorType, fromException, serializeError } from "./lib/errors.js";
+import { tryParseJSON } from "./lib/json.js";
+import { estimateCost, formatCost } from "./lib/pricing.js";
+import { ensureMigrated, appendHistory, makeHistoryEntry } from "./lib/storage.js";
 
-async function callAI(config, system, user, maxTokens) {
-  const { provider, apiKey, model } = config;
+ensureMigrated().catch(err => console.warn("[JD Analyzer] migration failed", err));
+
+// Read provider config + resume directly from storage so secrets never travel through messages.
+async function loadContext() {
+  const stored = await chrome.storage.local.get([
+    "provider", "claudeApiKey", "claudeModel",
+    "openaiApiKey", "openaiModel", "resume"
+  ]);
+  const provider = stored.provider || "claude";
+  const apiKey = provider === "openai" ? stored.openaiApiKey : stored.claudeApiKey;
+  const model = provider === "openai"
+    ? (stored.openaiModel || "gpt-4o-mini")
+    : (stored.claudeModel || "claude-sonnet-4-6");
+
   if (!apiKey) throw new AppError(ErrorType.AUTH, "API key not set.", { hint: "Open Settings ⚙️ to add your API key." });
-  if (!model) throw new AppError(ErrorType.AUTH, "Model not selected.", { hint: "Open Settings ⚙️ to choose a model." });
-  const params = { apiKey, model, system, user, maxTokens };
-  return provider === "openai" ? callOpenAI(params) : callClaude(params);
+  if (!stored.resume) throw new AppError(ErrorType.AUTH, "Resume not uploaded.", { hint: "Open Settings ⚙️ to upload your resume." });
+
+  return { provider, apiKey, model, resume: stored.resume };
 }
 
-async function callAIStream(config, system, user, maxTokens, onChunk) {
-  const { provider, apiKey, model } = config;
-  if (!apiKey) throw new AppError(ErrorType.AUTH, "API key not set.", { hint: "Open Settings ⚙️ to add your API key." });
-  if (!model) throw new AppError(ErrorType.AUTH, "Model not selected.", { hint: "Open Settings ⚙️ to choose a model." });
-  const params = { apiKey, model, system, user, maxTokens, onChunk };
-  return provider === "openai" ? callOpenAIStream(params) : callClaudeStream(params);
+function buildMeta(ctx, usage) {
+  const cost = estimateCost(ctx.model, usage?.inputTokens, usage?.outputTokens);
+  return {
+    provider: ctx.provider,
+    model: ctx.model,
+    inputTokens: usage?.inputTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+    costUsd: cost,
+    costFormatted: formatCost(cost)
+  };
 }
 
-function tryParseJSON(text) {
-  const cleaned = text.replace(/```json\s*|\s*```/g, "").trim();
-  return JSON.parse(cleaned);
+async function callAI(ctx, system, user, maxTokens) {
+  const params = { apiKey: ctx.apiKey, model: ctx.model, system, user, maxTokens };
+  return ctx.provider === "openai" ? callOpenAI(params) : callClaude(params);
+}
+
+async function callAIStream(ctx, system, user, maxTokens, onChunk) {
+  const params = { apiKey: ctx.apiKey, model: ctx.model, system, user, maxTokens, onChunk };
+  return ctx.provider === "openai" ? callOpenAIStream(params) : callClaudeStream(params);
 }
 
 /**
  * Call AI and parse JSON. If parse fails, retry once with stricter instruction.
+ * Returns { data, usage } from the LAST attempt (so we don't double-count tokens).
  */
-async function callAIWithJSONRetry(config, system, user, maxTokens) {
+async function callAIWithJSONRetry(ctx, system, user, maxTokens) {
   let lastError;
+  let lastUsage = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const text = await callAI(config, system, user, maxTokens);
+    const { text, usage } = await callAI(ctx, system, user, maxTokens);
+    lastUsage = usage;
     try {
-      return tryParseJSON(text);
+      const data = tryParseJSON(text);
+      return { data, usage };
     } catch (err) {
       lastError = err;
-      // Only retry once
       if (attempt === 0) {
-        // Reinforce JSON-only instruction on retry
         user = `${user}\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY a valid JSON object, with no markdown fences, no explanations, no extra text before or after.`;
         continue;
       }
     }
   }
-  // Both attempts failed
   throw fromException(new Error(`Invalid JSON: ${lastError?.message}`));
 }
 
 // ============== Task handlers ==============
-async function handleAnalyze({ config, resume, jdText }) {
-  return callAIWithJSONRetry(config, SYSTEM_PROMPT_ANALYZE, buildAnalyzePrompt(resume, jdText), 2500);
+async function handleAnalyze({ jdText }) {
+  const ctx = await loadContext();
+  const { data, usage } = await callAIWithJSONRetry(ctx, SYSTEM_PROMPT_ANALYZE, buildAnalyzePrompt(ctx.resume, jdText), 2500);
+  const meta = buildMeta(ctx, usage);
+
+  // Persist to history (best-effort, don't fail the request if storage write fails)
+  try {
+    await appendHistory(makeHistoryEntry({
+      jdText, analysis: data,
+      provider: ctx.provider, model: ctx.model,
+      costUsd: meta.costUsd
+    }));
+  } catch (err) {
+    console.warn("[JD Analyzer] history write failed", err);
+  }
+
+  return { ...data, _meta: meta };
 }
 
-async function handleResumeTips({ config, resume, jdText, analysis }) {
-  return callAIWithJSONRetry(config, SYSTEM_PROMPT_RESUME_TIPS, buildResumeTipsPrompt(resume, jdText, analysis), 2500);
+async function handleResumeTips({ jdText, analysis }) {
+  const ctx = await loadContext();
+  const { data, usage } = await callAIWithJSONRetry(ctx, SYSTEM_PROMPT_RESUME_TIPS, buildResumeTipsPrompt(ctx.resume, jdText, analysis), 2500);
+  return { ...data, _meta: buildMeta(ctx, usage) };
 }
 
-async function handleInterview({ config, resume, jdText, analysis }) {
-  return callAIWithJSONRetry(config, SYSTEM_PROMPT_INTERVIEW, buildInterviewPrompt(resume, jdText, analysis), 3000);
+async function handleInterview({ jdText, analysis }) {
+  const ctx = await loadContext();
+  const { data, usage } = await callAIWithJSONRetry(ctx, SYSTEM_PROMPT_INTERVIEW, buildInterviewPrompt(ctx.resume, jdText, analysis), 3000);
+  return { ...data, _meta: buildMeta(ctx, usage) };
 }
 
 async function handleCoverLetterStream(payload, port) {
-  const { config, resume, jdText, analysis } = payload;
+  const { jdText, analysis } = payload;
   try {
-    const fullText = await callAIStream(
-      config,
+    const ctx = await loadContext();
+    const { text: fullText, usage } = await callAIStream(
+      ctx,
       SYSTEM_PROMPT_COVER_LETTER,
-      buildCoverLetterPrompt(resume, jdText, analysis),
+      buildCoverLetterPrompt(ctx.resume, jdText, analysis),
       800,
       (chunk, accumulated) => {
         try {
@@ -86,7 +131,7 @@ async function handleCoverLetterStream(payload, port) {
         }
       }
     );
-    port.postMessage({ type: "DONE", fullText });
+    port.postMessage({ type: "DONE", fullText, _meta: buildMeta(ctx, usage) });
   } catch (err) {
     port.postMessage({ type: "ERROR", error: serializeError(err) });
   }
