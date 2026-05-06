@@ -7,17 +7,26 @@
 [![Chrome](https://img.shields.io/badge/Chrome-MV3-green.svg)](manifest.json)
 [![Privacy](https://img.shields.io/badge/Privacy-Local--First-success.svg)](PRIVACY.md)
 
-A privacy-first Chrome extension for job seekers. Upload your resume, paste any job description, and get an actionable analysis powered by your own AI provider — no backend, no tracking, no ads.
+A privacy-first Chrome extension for job seekers. Open any job posting, click *Auto-fill*, and get an actionable analysis powered by your own AI provider — no backend, no tracking, no ads.
 
 ## ✨ Features
 
-- 📊 **Match Score (0-100)** with transparent 4-dimension rubric
+**Analysis**
+- 📊 **Match Score (0-100)** with a transparent 4-dimension rubric (skills · experience · industry · soft skills)
 - 📌 **Keyword Extraction** — top skills/tools from the JD
 - ✅ **Strength Analysis** — what aligns
 - 📉 **Skill Gap Detection** with priority and concrete remediation
+
+**Generators**
 - ✍️ **Cover Letter** — streamed in English, 3 paragraphs, copy-ready
-- 📝 **Resume Optimization Tips** — line-by-line rewrite suggestions + ATS score
-- 🎤 **Interview Question Prediction** — 8 technical + 2 behavioral with hints
+- 📝 **Resume Optimization Tips** — line-by-line rewrites + ATS-friendliness score
+- 🎤 **Interview Prediction** — 8 technical + 2 behavioral questions with hints
+
+**Workflow** *(new in v1.1)*
+- 📋 **One-click JD auto-fill** from LinkedIn, Seek, Indeed, Lever, Greenhouse, Ashby, Workable, Glassdoor (plus selection + generic fallbacks)
+- 🕒 **Recent analyses** — last 5 analyses saved locally; click to revisit instantly
+- 💰 **Cost transparency** — exact USD cost + token counts after every call
+- 🔔 **Resume staleness reminder** when the saved resume is older than 90 days
 
 ## 🔒 Privacy
 
@@ -54,13 +63,14 @@ A typical analysis costs **$0.01–0.03** on your provider account.
 
 ## 📖 Usage
 
-1. On any job site, **select the JD text → Cmd/Ctrl+C**
-2. Click the JD Analyzer icon → **paste** → **Analyze**
-3. Review the score and breakdown
+1. Open a job posting on any site (LinkedIn / Seek / Indeed / company careers page…)
+2. Click the JD Analyzer icon → **📋 Auto-fill from this tab** *(or paste manually)* → **Analyze**
+3. Review the score, breakdown, and per-call cost
 4. Switch tabs as needed:
    - **Cover Letter** — streamed English cover letter
    - **Resume Tips** — concrete rewrites
    - **Interview** — predicted questions
+5. Click any item under **Recent** to revisit a past analysis without re-running the AI
 
 ## 🏗️ Architecture
 
@@ -71,34 +81,59 @@ jd-analyzer/
 ├── popup.html / .css / .js    # Main popup with tabs
 ├── options.html / .css / .js  # Settings + file upload
 ├── lib/
-│   ├── claudeProvider.js      # Claude API + SSE streaming
-│   ├── openaiProvider.js      # OpenAI API + SSE streaming
+│   ├── claudeProvider.js      # Claude API + SSE streaming + token usage
+│   ├── openaiProvider.js      # OpenAI API + SSE streaming + token usage
 │   ├── prompts.js             # 4 prompt templates
 │   ├── resumeParser.js        # PDF/DOCX/TXT parsing
-│   └── errors.js              # Centralized error classification
+│   ├── errors.js              # Centralized error classification
+│   ├── json.js                # Robust JSON extraction from LLM output
+│   ├── pricing.js             # Per-model USD cost estimation
+│   ├── storage.js             # Schema migration + analysis history
+│   └── jdExtractor.js         # Site-specific page extraction
 ├── vendor/
 │   ├── pdf.min.mjs            # pdf.js (Mozilla)
 │   ├── pdf.worker.min.mjs
 │   └── mammoth.browser.min.js # DOCX parsing
-└── icons/
+├── tests/                     # vitest unit tests
+└── .github/workflows/ci.yml   # GitHub Actions CI
 ```
 
 ## 🛠️ Tech Highlights
 
 - **Manifest V3** Service Worker architecture
-- **Adapter pattern** for multi-provider AI abstraction
+- **Adapter pattern** for multi-provider AI abstraction (Claude + OpenAI)
 - **Server-Sent Events (SSE)** streaming for long-text generation
 - **Fully client-side document parsing** — privacy-preserving
 - **Rubric-based scoring** to mitigate LLM output instability
 - **Low temperature (T=0.2)** for reproducible scores
-- **Auto JSON-retry** when AI returns malformed output
+- **Robust JSON extraction** with prose-to-JSON fallback + auto retry
+- **Per-call cost tracking** by capturing usage from non-streaming and streaming responses
+- **Active-tab page extraction** via `chrome.scripting.executeScript` with site-specific selectors
 - **Categorized error handling** with actionable recovery hints
+- **Storage schema versioning** for safe future migrations
+- **37 unit tests** (vitest) + GitHub Actions CI on every push/PR
+
+## 🧪 Development
+
+```bash
+git clone https://github.com/aarontao/jd-analyzer.git
+cd jd-analyzer
+
+# Run tests
+npm install
+npm test
+
+# Load unpacked into Chrome:
+# chrome://extensions/ → Developer mode → Load unpacked → select this folder
+```
 
 ## 🗺️ Roadmap
 
+- [x] Auto-extraction from LinkedIn / Seek / Indeed and other major boards *(v1.1)*
+- [x] Per-call cost transparency *(v1.1)*
+- [x] Local analysis history *(v1.1)*
 - [ ] Multi-resume profiles (frontend / backend / fullstack variants)
 - [ ] Job application tracker (status, follow-ups, reminders)
-- [ ] Auto-extraction from LinkedIn / Seek pages
 - [ ] Export cover letter as formatted PDF
 - [ ] Dark mode
 - [ ] Localization (zh-CN, ja, etc.)
@@ -106,13 +141,7 @@ jd-analyzer/
 
 ## 🤝 Contributing
 
-PRs welcome. For major changes, open an issue first.
-
-```bash
-git clone https://github.com/aarontao/jd-analyzer.git
-cd jd-analyzer
-# Load unpacked into Chrome
-```
+PRs welcome. For major changes, open an issue first. See the [Development](#-development) section for setup.
 
 ## 📄 License
 
