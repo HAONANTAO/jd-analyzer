@@ -85,7 +85,7 @@ Get an OpenAI API key: https://platform.openai.com/
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 1. Open Settings — choose your AI provider, paste API key, upload resume (PDF/DOCX/TXT)
-2. On any job site (LinkedIn, Seek, Indeed, company pages...), copy the JD
+2. On any job posting page, copy the JD
 3. Click the JD Analyzer icon → paste → Analyze
 4. Review score, then generate cover letter / tips / interview questions as needed
 
