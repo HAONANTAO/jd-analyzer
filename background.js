@@ -1,4 +1,4 @@
-// background.js v1.1
+// background.js v1.2
 import { callClaude, callClaudeStream } from "./lib/claudeProvider.js";
 import { callOpenAI, callOpenAIStream } from "./lib/openaiProvider.js";
 import {
@@ -14,7 +14,8 @@ import {
 import { AppError, ErrorType, fromException, serializeError } from "./lib/errors.js";
 import { tryParseJSON } from "./lib/json.js";
 import { estimateCost, formatCost } from "./lib/pricing.js";
-import { ensureMigrated, appendHistory, makeHistoryEntry } from "./lib/storage.js";
+import { ensureMigrated, appendHistory, makeHistoryEntry, getActiveResume } from "./lib/storage.js";
+import { deriveAtsAssessment } from "./lib/resumeParser.js";
 
 ensureMigrated().catch(err => console.warn("[JD Analyzer] migration failed", err));
 
@@ -22,18 +23,32 @@ ensureMigrated().catch(err => console.warn("[JD Analyzer] migration failed", err
 async function loadContext() {
   const stored = await chrome.storage.local.get([
     "provider", "claudeApiKey", "claudeModel",
-    "openaiApiKey", "openaiModel", "resume"
+    "openaiApiKey", "openaiModel", "explanationLanguage"
   ]);
   const provider = stored.provider || "claude";
   const apiKey = provider === "openai" ? stored.openaiApiKey : stored.claudeApiKey;
   const model = provider === "openai"
     ? (stored.openaiModel || "gpt-4o-mini")
     : (stored.claudeModel || "claude-sonnet-4-6");
+  const explanationLanguage = stored.explanationLanguage || "en";
+
+  const activeResume = await getActiveResume();
 
   if (!apiKey) throw new AppError(ErrorType.AUTH, "API key not set.", { hint: "Open Settings ⚙️ to add your API key." });
-  if (!stored.resume) throw new AppError(ErrorType.AUTH, "Resume not uploaded.", { hint: "Open Settings ⚙️ to upload your resume." });
+  if (!activeResume?.content) throw new AppError(ErrorType.AUTH, "Resume not uploaded.", { hint: "Open Settings ⚙️ to upload your resume." });
 
-  return { provider, apiKey, model, resume: stored.resume };
+  return {
+    provider,
+    apiKey,
+    model,
+    explanationLanguage,
+    resume: activeResume.content,
+    resumeMeta: {
+      label: activeResume.label,
+      fileType: activeResume.fileType,
+      atsSignals: activeResume.atsSignals || null
+    }
+  };
 }
 
 function buildMeta(ctx, usage) {
@@ -85,7 +100,12 @@ async function callAIWithJSONRetry(ctx, system, user, maxTokens) {
 // ============== Task handlers ==============
 async function handleAnalyze({ jdText }) {
   const ctx = await loadContext();
-  const { data, usage } = await callAIWithJSONRetry(ctx, SYSTEM_PROMPT_ANALYZE, buildAnalyzePrompt(ctx.resume, jdText), 2500);
+  const { data, usage } = await callAIWithJSONRetry(
+    ctx,
+    SYSTEM_PROMPT_ANALYZE,
+    buildAnalyzePrompt(ctx.resume, jdText, ctx.explanationLanguage),
+    3800
+  );
   const meta = buildMeta(ctx, usage);
 
   // Persist to history (best-effort, don't fail the request if storage write fails)
@@ -104,24 +124,35 @@ async function handleAnalyze({ jdText }) {
 
 async function handleResumeTips({ jdText, analysis }) {
   const ctx = await loadContext();
-  const { data, usage } = await callAIWithJSONRetry(ctx, SYSTEM_PROMPT_RESUME_TIPS, buildResumeTipsPrompt(ctx.resume, jdText, analysis), 2500);
-  return { ...data, _meta: buildMeta(ctx, usage) };
+  const atsAssessment = deriveAtsAssessment(ctx.resumeMeta?.atsSignals);
+  const { data, usage } = await callAIWithJSONRetry(
+    ctx,
+    SYSTEM_PROMPT_RESUME_TIPS,
+    buildResumeTipsPrompt(ctx.resume, jdText, analysis, atsAssessment, ctx.explanationLanguage),
+    2500
+  );
+  return { ...data, _meta: buildMeta(ctx, usage), _atsPreCheck: atsAssessment };
 }
 
 async function handleInterview({ jdText, analysis }) {
   const ctx = await loadContext();
-  const { data, usage } = await callAIWithJSONRetry(ctx, SYSTEM_PROMPT_INTERVIEW, buildInterviewPrompt(ctx.resume, jdText, analysis), 3000);
+  const { data, usage } = await callAIWithJSONRetry(
+    ctx,
+    SYSTEM_PROMPT_INTERVIEW,
+    buildInterviewPrompt(ctx.resume, jdText, analysis, ctx.explanationLanguage),
+    3000
+  );
   return { ...data, _meta: buildMeta(ctx, usage) };
 }
 
 async function handleCoverLetterStream(payload, port) {
-  const { jdText, analysis } = payload;
+  const { jdText, analysis, guidance } = payload;
   try {
     const ctx = await loadContext();
     const { text: fullText, usage } = await callAIStream(
       ctx,
       SYSTEM_PROMPT_COVER_LETTER,
-      buildCoverLetterPrompt(ctx.resume, jdText, analysis),
+      buildCoverLetterPrompt(ctx.resume, jdText, analysis, guidance),
       800,
       (chunk, accumulated) => {
         try {

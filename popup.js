@@ -1,7 +1,12 @@
-// popup.js v1.1
-import { getHistory, clearHistory } from "./lib/storage.js";
+// popup.js v1.2
+import {
+  ensureMigrated,
+  getHistory, clearHistory, removeHistoryEntry,
+  getResumes, setActiveResume
+} from "./lib/storage.js";
 import { formatCost } from "./lib/pricing.js";
 import { extractJDFromPage } from "./lib/jdExtractor.js";
+import { startJdPicker } from "./lib/jdPicker.js";
 
 const STALE_DAYS = 90;
 
@@ -17,6 +22,73 @@ const states = {
 let cachedJDText = null;
 let cachedAnalysis = null;
 let lastFailedAction = null;  // for retry button
+
+// In-flight guard: prevents a second request from firing while the first is still pending.
+const inflight = { analyze: false, coverLetter: false, tips: false, interview: false };
+
+function withGuard(key, fn) {
+  return async (...args) => {
+    if (inflight[key]) return;
+    inflight[key] = true;
+    try {
+      await fn(...args);
+    } finally {
+      inflight[key] = false;
+    }
+  };
+}
+
+// ============== Inline notifications ==============
+function showToast(message, { tone = "info", duration = 3500 } = {}) {
+  const stack = document.getElementById("toast-stack");
+  if (!stack) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${tone}`;
+  toast.textContent = message;
+  stack.appendChild(toast);
+  // animate in next frame
+  requestAnimationFrame(() => toast.classList.add("toast-visible"));
+  const remove = () => {
+    toast.classList.remove("toast-visible");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+  };
+  setTimeout(remove, duration);
+  toast.addEventListener("click", remove);
+}
+
+function showConfirm(message) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById("confirm-dialog");
+    const msgEl = document.getElementById("confirm-message");
+    const okBtn = document.getElementById("confirm-ok");
+    const cancelBtn = document.getElementById("confirm-cancel");
+
+    msgEl.textContent = message;
+    overlay.classList.remove("hidden");
+
+    const cleanup = (answer) => {
+      overlay.classList.add("hidden");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      overlay.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKey);
+      resolve(answer);
+    };
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onBackdrop = (e) => { if (e.target === overlay) cleanup(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") cleanup(false);
+      if (e.key === "Enter") cleanup(true);
+    };
+
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    overlay.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKey);
+    setTimeout(() => okBtn.focus(), 0);
+  });
+}
 
 function showState(name) {
   Object.keys(states).forEach(k => {
@@ -103,10 +175,16 @@ function showError(err, retryAction = null) {
 
 // ============== Init ==============
 async function init() {
+  await ensureMigrated();
+
+  // Theme: apply BEFORE first paint
+  const { theme = "system" } = await chrome.storage.local.get("theme");
+  applyTheme(theme);
+
   const stored = await chrome.storage.local.get([
     "provider", "claudeApiKey", "claudeModel",
-    "openaiApiKey", "openaiModel", "resume",
-    "onboardingCompleted", "resumeUpdatedAt"
+    "openaiApiKey", "openaiModel",
+    "onboardingCompleted"
   ]);
 
   const provider = stored.provider || "claude";
@@ -115,7 +193,10 @@ async function init() {
     ? (stored.openaiModel || "gpt-4o-mini")
     : (stored.claudeModel || "claude-sonnet-4-6");
 
-  if (!apiKey || !stored.resume) {
+  const { resumes, activeResumeId } = await getResumes();
+  const activeResume = resumes.find(r => r.id === activeResumeId) || resumes[0] || null;
+
+  if (!apiKey || !activeResume) {
     showState("notConfigured");
     return;
   }
@@ -128,10 +209,64 @@ async function init() {
   document.getElementById("provider-tag").textContent =
     `Engine: ${provider === "openai" ? "OpenAI" : "Claude"} · ${model}`;
 
-  updateStaleBanner(stored.resumeUpdatedAt);
+  await renderResumeSelector(resumes, activeResume.id);
+  updateStaleBanner(activeResume.updatedAt);
   await refreshHistoryView();
 
   showState("paste");
+
+  // If the user finished a click-to-pick session in the page,
+  // their captured JD is waiting in storage — drop it into the textarea.
+  await consumePendingJd();
+}
+
+let systemThemeMq = null;
+function applyTheme(theme) {
+  const t = theme || "system";
+  document.documentElement.setAttribute("data-theme", t);
+
+  const resolveDark = () => {
+    if (t === "dark") return true;
+    if (t === "light") return false;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+
+  document.documentElement.classList.toggle("theme-dark", resolveDark());
+
+  // For "system", react to OS-level changes while the popup is open.
+  if (systemThemeMq) {
+    systemThemeMq.onchange = null;
+    systemThemeMq = null;
+  }
+  if (t === "system" && window.matchMedia) {
+    systemThemeMq = window.matchMedia("(prefers-color-scheme: dark)");
+    systemThemeMq.onchange = (e) => {
+      document.documentElement.classList.toggle("theme-dark", e.matches);
+    };
+  }
+}
+
+async function renderResumeSelector(resumes, activeId) {
+  const select = document.getElementById("resume-select");
+  select.innerHTML = "";
+  resumes.forEach(r => {
+    const opt = document.createElement("option");
+    opt.value = r.id;
+    opt.textContent = r.label || "Untitled";
+    if (r.id === activeId) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+async function onResumeSelectChange(e) {
+  const id = e.target.value;
+  await setActiveResume(id);
+  const { resumes } = await getResumes();
+  const picked = resumes.find(r => r.id === id);
+  if (picked) {
+    updateStaleBanner(picked.updatedAt);
+    showToast(`Now using "${picked.label}".`, { tone: "info", duration: 2000 });
+  }
 }
 
 // ============== Resume staleness banner ==============
@@ -163,7 +298,7 @@ async function refreshHistoryView() {
   section.classList.remove("hidden");
   list.innerHTML = "";
 
-  history.slice(0, 5).forEach(entry => {
+  history.forEach(entry => {
     const item = document.createElement("div");
     item.className = "recent-item";
 
@@ -184,8 +319,20 @@ async function refreshHistoryView() {
     score.className = "recent-score";
     score.textContent = entry.matchScore != null ? String(entry.matchScore) : "--";
 
+    const delBtn = document.createElement("button");
+    delBtn.className = "recent-delete";
+    delBtn.title = "Remove this entry";
+    delBtn.setAttribute("aria-label", "Remove this entry");
+    delBtn.textContent = "×";
+    delBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await removeHistoryEntry(entry.id);
+      await refreshHistoryView();
+    });
+
     item.appendChild(meta);
     item.appendChild(score);
+    item.appendChild(delBtn);
     item.addEventListener("click", () => openHistoryEntry(entry));
     list.appendChild(item);
   });
@@ -231,9 +378,11 @@ function openHistoryEntry(entry) {
 }
 
 async function handleClearHistory() {
-  if (!confirm("Clear all recent analyses?")) return;
+  const ok = await showConfirm("Clear all recent analyses?");
+  if (!ok) return;
   await clearHistory();
   await refreshHistoryView();
+  showToast("History cleared", { tone: "info" });
 }
 
 // ============== Auto-fill from active tab ==============
@@ -243,14 +392,17 @@ async function autoFillFromTab() {
   btn.disabled = true;
   btn.textContent = "Reading page...";
 
+  const resetBtn = () => { btn.textContent = original; btn.disabled = false; };
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
-      alert("No active tab found.");
+      showToast("No active tab found.", { tone: "warn" });
+      resetBtn();
       return;
     }
     if (tab.url?.startsWith("chrome://") || tab.url?.startsWith("chrome-extension://")) {
-      alert("Can't read browser internal pages. Open a real job posting first.");
+      showToast("Can't read browser internal pages. Open a real job posting first.", { tone: "warn" });
+      resetBtn();
       return;
     }
     const [{ result } = {}] = await chrome.scripting.executeScript({
@@ -259,20 +411,63 @@ async function autoFillFromTab() {
     });
 
     if (!result?.text) {
-      alert("Couldn't auto-detect a JD on this page.\n\nTip: highlight the JD text first, then click Auto-fill again — selection is used as a fallback.");
+      showToast("Couldn't auto-detect a JD. Switching to pick mode — click the JD area on the page.", { tone: "info", duration: 4000 });
+      resetBtn();
+      // Auto-fall back into manual picker
+      setTimeout(() => pickJdManually(), 600);
       return;
     }
 
     jdInput.value = result.text;
     charCount.textContent = `${result.text.length} characters`;
     btn.textContent = `✓ Filled from ${result.source}`;
-    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1500);
+    setTimeout(resetBtn, 1500);
   } catch (err) {
     console.error("[JD Analyzer] auto-fill failed", err);
-    alert("Couldn't access this page. Some sites block extensions — copy the JD manually.");
-    btn.textContent = original;
-    btn.disabled = false;
+    showToast("Couldn't access this page. Some sites block extensions — copy the JD manually.", { tone: "error", duration: 5000 });
+    resetBtn();
   }
+}
+
+// ============== Pick manually (click-to-pick) ==============
+async function pickJdManually() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) {
+    showToast("No active tab found.", { tone: "warn" });
+    return;
+  }
+  if (tab.url?.startsWith("chrome://") || tab.url?.startsWith("chrome-extension://")) {
+    showToast("Can't run on browser internal pages.", { tone: "warn" });
+    return;
+  }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: startJdPicker
+    });
+    showToast("Click the JD on the page · ESC to cancel · Reopen this popup when done.", { tone: "info", duration: 4500 });
+    // Close popup so the user can interact with the page.
+    setTimeout(() => window.close(), 700);
+  } catch (err) {
+    console.error("[JD Analyzer] pick failed", err);
+    showToast("Couldn't start picker. Some sites block extensions.", { tone: "error" });
+  }
+}
+
+// ============== Consume a JD captured via click-to-pick ==============
+async function consumePendingJd() {
+  const stored = await chrome.storage.local.get(["pendingJdText", "pendingJdAt", "pendingJdSource"]);
+  if (!stored.pendingJdText) return false;
+  // Stale after 5 minutes — assume the user abandoned this pick session.
+  if (stored.pendingJdAt && Date.now() - stored.pendingJdAt > 5 * 60 * 1000) {
+    await chrome.storage.local.remove(["pendingJdText", "pendingJdAt", "pendingJdSource"]);
+    return false;
+  }
+  jdInput.value = stored.pendingJdText;
+  charCount.textContent = `${stored.pendingJdText.length} characters`;
+  await chrome.storage.local.remove(["pendingJdText", "pendingJdAt", "pendingJdSource"]);
+  showToast(`✓ JD captured via picker (${stored.pendingJdText.length.toLocaleString()} chars)`, { tone: "info", duration: 3000 });
+  return true;
 }
 
 // JD char count
@@ -286,7 +481,7 @@ jdInput.addEventListener("input", () => {
 async function runAnalysis() {
   const jdText = jdInput.value.trim();
   if (jdText.length < 50) {
-    alert("JD too short. Please paste a complete job description (at least 50 characters).");
+    showToast("JD too short. Paste a complete job description (at least 50 characters).", { tone: "warn" });
     return;
   }
 
@@ -312,6 +507,117 @@ async function runAnalysis() {
 }
 
 // ============== Render Result ==============
+function barTone(pct) {
+  if (pct >= 75) return "bar-strong";
+  if (pct >= 50) return "bar-okay";
+  if (pct >= 25) return "bar-weak";
+  return "bar-poor";
+}
+
+const LIKELIHOOD_TIERS = {
+  low:         { label: "Low",         tone: "tier-low"    },
+  moderate:    { label: "Moderate",    tone: "tier-mod"    },
+  strong:      { label: "Strong",      tone: "tier-strong" },
+  very_strong: { label: "Very strong", tone: "tier-vstrong"}
+};
+
+function renderLikelihood(likelihood) {
+  const card = document.getElementById("likelihood-card");
+  if (!likelihood || typeof likelihood !== "object") {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+
+  const score = Number.isFinite(likelihood.score) ? likelihood.score : null;
+  const tierKey = likelihood.tier || (score == null ? "moderate" : tierFromScore(score));
+  const tier = LIKELIHOOD_TIERS[tierKey] || LIKELIHOOD_TIERS.moderate;
+
+  const tierEl = document.getElementById("likelihood-tier");
+  tierEl.textContent = tier.label;
+  tierEl.className = `likelihood-tier ${tier.tone}`;
+
+  document.getElementById("likelihood-score").textContent = score == null ? "--" : `${score}%`;
+
+  const fill = document.getElementById("likelihood-bar-fill");
+  fill.style.width = `${score == null ? 0 : Math.max(0, Math.min(100, score))}%`;
+  fill.className = `likelihood-bar-fill ${tier.tone}`;
+
+  document.getElementById("likelihood-reasoning").textContent = likelihood.reasoning || "";
+
+  const adjContainer = document.getElementById("likelihood-adjustments");
+  adjContainer.innerHTML = "";
+  (likelihood.adjustments || []).forEach(adj => {
+    const li = document.createElement("div");
+    li.className = "likelihood-adjustment";
+    const isPositive = /^\s*\+/.test(String(adj));
+    li.classList.add(isPositive ? "adj-positive" : "adj-negative");
+    li.textContent = adj;
+    adjContainer.appendChild(li);
+  });
+}
+
+function tierFromScore(s) {
+  if (s >= 75) return "very_strong";
+  if (s >= 50) return "strong";
+  if (s >= 25) return "moderate";
+  return "low";
+}
+
+const AUDIT_STATUS = {
+  present: { icon: "✓", cls: "audit-present" },
+  partial: { icon: "~", cls: "audit-partial" },
+  missing: { icon: "✗", cls: "audit-missing" }
+};
+
+function renderSkillsAudit(audit) {
+  const section = document.getElementById("skills-audit-section");
+  const container = document.getElementById("skills-audit");
+  container.innerHTML = "";
+
+  if (!Array.isArray(audit) || audit.length === 0) {
+    section.classList.add("hidden");
+    return;
+  }
+  section.classList.remove("hidden");
+
+  // Sort: must-have first, then by status (missing → partial → present)
+  const statusRank = { missing: 0, partial: 1, present: 2 };
+  const sorted = [...audit].sort((a, b) => {
+    const reqDiff = (a.required === "must-have" ? 0 : 1) - (b.required === "must-have" ? 0 : 1);
+    if (reqDiff !== 0) return reqDiff;
+    return (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3);
+  });
+
+  sorted.forEach(item => {
+    const row = document.createElement("div");
+    const status = AUDIT_STATUS[item.status] || AUDIT_STATUS.missing;
+    row.className = `audit-row ${status.cls}`;
+    row.innerHTML = `
+      <span class="audit-status-icon"></span>
+      <div class="audit-body">
+        <div class="audit-skill-line">
+          <span class="audit-skill"></span>
+          <span class="audit-req"></span>
+        </div>
+        <div class="audit-evidence"></div>
+      </div>
+    `;
+    row.querySelector(".audit-status-icon").textContent = status.icon;
+    row.querySelector(".audit-skill").textContent = item.skill || "Unknown";
+    const req = row.querySelector(".audit-req");
+    req.textContent = item.required === "must-have" ? "must-have" : "nice-to-have";
+    req.classList.add(item.required === "must-have" ? "req-must" : "req-nice");
+    const ev = row.querySelector(".audit-evidence");
+    if (item.evidence) {
+      ev.textContent = `“${item.evidence}”`;
+    } else {
+      ev.style.display = "none";
+    }
+    container.appendChild(row);
+  });
+}
+
 function renderResult(data) {
   document.getElementById("score-value").textContent = data.matchScore ?? "--";
 
@@ -344,7 +650,9 @@ function renderResult(data) {
   const breakdownLabels = {
     skills: "🎯 Skills",
     experience: "📅 Experience",
+    education: "🎓 Education",
     industry: "🏢 Industry",
+    authorization: "📍 Location / Auth",
     softSkills: "💬 Soft Skills"
   };
   if (data.scoreBreakdown) {
@@ -352,12 +660,24 @@ function renderResult(data) {
       const div = document.createElement("div");
       div.className = "breakdown-item";
       const label = breakdownLabels[key] || key;
-      const match = String(value).match(/^([\d.]+\/[\d.]+)\s*-?\s*(.*)$/);
+      const match = String(value).match(/^([\d.]+)\/([\d.]+)\s*-?\s*(.*)$/);
       if (match) {
-        div.innerHTML = `<span class="breakdown-label"></span><span class="breakdown-score"></span><div style="margin-top:2px;color:#6b7280;"></div>`;
+        const got = parseFloat(match[1]);
+        const max = parseFloat(match[2]);
+        const pct = max > 0 ? Math.max(0, Math.min(100, (got / max) * 100)) : 0;
+        div.innerHTML = `
+          <div class="breakdown-row">
+            <span class="breakdown-label"></span>
+            <span class="breakdown-score"></span>
+          </div>
+          <div class="breakdown-bar"><div class="breakdown-bar-fill"></div></div>
+          <div class="breakdown-note"></div>
+        `;
         div.querySelector(".breakdown-label").textContent = label;
-        div.querySelector(".breakdown-score").textContent = match[1];
-        div.querySelector("div").textContent = match[2];
+        div.querySelector(".breakdown-score").textContent = `${match[1]}/${match[2]}`;
+        div.querySelector(".breakdown-bar-fill").style.width = `${pct}%`;
+        div.querySelector(".breakdown-bar-fill").classList.add(barTone(pct));
+        div.querySelector(".breakdown-note").textContent = match[3];
       } else {
         div.innerHTML = `<span class="breakdown-label"></span> <span></span>`;
         div.querySelector(".breakdown-label").textContent = label;
@@ -366,6 +686,12 @@ function renderResult(data) {
       breakdownContainer.appendChild(div);
     });
   }
+
+  // Interview likelihood
+  renderLikelihood(data.interviewLikelihood);
+
+  // Skills audit
+  renderSkillsAudit(data.skillsAudit);
 
   // Keywords
   const kwContainer = document.getElementById("keywords");
@@ -398,11 +724,38 @@ function renderResult(data) {
         <span class="skill-importance importance-${item.importance || 'medium'}"></span>
       </div>
       <div class="skill-suggestion"></div>
+      <div class="skill-resource hidden"></div>
     `;
     div.querySelector(".skill-name span:first-child").textContent = item.skill;
     div.querySelector(".skill-importance").textContent =
       ({ high: "High", medium: "Medium", low: "Low" })[item.importance] || "Medium";
     div.querySelector(".skill-suggestion").textContent = item.suggestion || "";
+
+    const lr = item.learningResource;
+    if (lr && lr.query && lr.title) {
+      const resourceEl = div.querySelector(".skill-resource");
+      const typeLabel = ({
+        course: "📚 Course",
+        docs: "📖 Docs",
+        book: "📕 Book",
+        tutorial: "🎯 Tutorial"
+      })[lr.type] || "📚 Resource";
+      const link = document.createElement("a");
+      link.href = `https://www.google.com/search?q=${encodeURIComponent(lr.query)}`;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.className = "skill-resource-link";
+      link.textContent = lr.title;
+
+      const label = document.createElement("span");
+      label.className = "skill-resource-type";
+      label.textContent = typeLabel;
+
+      resourceEl.appendChild(label);
+      resourceEl.appendChild(link);
+      resourceEl.classList.remove("hidden");
+    }
+
     missingContainer.appendChild(div);
   });
 }
@@ -424,6 +777,11 @@ function resetAllTabs() {
   document.getElementById("cl-result").classList.add("hidden");
   document.getElementById("cl-text").textContent = "";
   document.getElementById("cl-text-streaming").textContent = "";
+  // Clear both guidance textareas (a new analysis = fresh slate)
+  const g1 = document.getElementById("cl-guidance");
+  const g2 = document.getElementById("cl-guidance-regen");
+  if (g1) { g1.value = ""; document.getElementById("cl-guidance-count").textContent = "0"; }
+  if (g2) { g2.value = ""; document.getElementById("cl-guidance-regen-count").textContent = "0"; }
 
   document.getElementById("tips-empty").classList.remove("hidden");
   document.getElementById("tips-loading").classList.add("hidden");
@@ -435,7 +793,19 @@ function resetAllTabs() {
 }
 
 // ============== Cover Letter (streaming) ==============
+function getCoverLetterGuidance() {
+  // If the result panel is visible, prefer its regen textarea; otherwise the empty-state one.
+  const result = document.getElementById("cl-result");
+  const id = result.classList.contains("hidden") ? "cl-guidance" : "cl-guidance-regen";
+  return (document.getElementById(id)?.value || "").trim();
+}
+
 function generateCoverLetter() {
+  if (inflight.coverLetter) return;
+  inflight.coverLetter = true;
+
+  const guidance = getCoverLetterGuidance();
+
   document.getElementById("cl-empty").classList.add("hidden");
   document.getElementById("cl-result").classList.add("hidden");
   document.getElementById("cl-streaming").classList.remove("hidden");
@@ -443,7 +813,9 @@ function generateCoverLetter() {
   streamingEl.textContent = "";
 
   const port = chrome.runtime.connect({ name: "cover-letter-stream" });
+  const release = () => { inflight.coverLetter = false; };
 
+  port.onDisconnect.addListener(release);
   port.onMessage.addListener((msg) => {
     if (msg.type === "CHUNK") {
       streamingEl.textContent = msg.accumulated;
@@ -466,7 +838,8 @@ function generateCoverLetter() {
     type: "START",
     payload: {
       jdText: cachedJDText,
-      analysis: cachedAnalysis
+      analysis: cachedAnalysis,
+      guidance
     }
   });
 }
@@ -480,7 +853,7 @@ async function copyCoverLetter() {
     btn.textContent = "✓ Copied";
     setTimeout(() => btn.textContent = original, 1500);
   } catch (err) {
-    alert("Copy failed. Please select the text manually.");
+    showToast("Copy failed. Select the text manually.", { tone: "error" });
   }
 }
 
@@ -677,7 +1050,7 @@ document.getElementById("error-retry-btn").addEventListener("click", () => {
     action();
   }
 });
-document.getElementById("analyze-btn").addEventListener("click", runAnalysis);
+document.getElementById("analyze-btn").addEventListener("click", withGuard("analyze", runAnalysis));
 document.getElementById("retry-btn").addEventListener("click", () => showState("paste"));
 document.getElementById("back-btn").addEventListener("click", () => showState("paste"));
 
@@ -685,11 +1058,25 @@ document.getElementById("generate-cl-btn").addEventListener("click", generateCov
 document.getElementById("regen-cl-btn").addEventListener("click", generateCoverLetter);
 document.getElementById("copy-cl-btn").addEventListener("click", copyCoverLetter);
 
-document.getElementById("generate-tips-btn").addEventListener("click", generateResumeTips);
-document.getElementById("generate-interview-btn").addEventListener("click", generateInterviewQuestions);
+const clGuidance = document.getElementById("cl-guidance");
+const clGuidanceCount = document.getElementById("cl-guidance-count");
+clGuidance?.addEventListener("input", () => {
+  clGuidanceCount.textContent = String(clGuidance.value.length);
+});
+const clGuidanceRegen = document.getElementById("cl-guidance-regen");
+const clGuidanceRegenCount = document.getElementById("cl-guidance-regen-count");
+clGuidanceRegen?.addEventListener("input", () => {
+  clGuidanceRegenCount.textContent = String(clGuidanceRegen.value.length);
+});
+
+document.getElementById("generate-tips-btn").addEventListener("click", withGuard("tips", generateResumeTips));
+document.getElementById("generate-interview-btn").addEventListener("click", withGuard("interview", generateInterviewQuestions));
 
 document.getElementById("auto-fill-btn").addEventListener("click", autoFillFromTab);
+document.getElementById("pick-jd-btn").addEventListener("click", pickJdManually);
 document.getElementById("clear-history-btn").addEventListener("click", handleClearHistory);
 document.getElementById("resume-stale-update").addEventListener("click", () => chrome.runtime.openOptionsPage());
+document.getElementById("resume-select").addEventListener("change", onResumeSelectChange);
+document.getElementById("manage-resumes-btn").addEventListener("click", () => chrome.runtime.openOptionsPage());
 
 init();

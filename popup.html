@@ -74,12 +74,19 @@
         <button id="resume-stale-update" class="link-btn">Update it →</button>
       </div>
 
+      <div class="resume-pick" id="resume-pick">
+        <label class="resume-pick-label">📄 Using resume:</label>
+        <select id="resume-select"></select>
+        <button id="manage-resumes-btn" class="link-btn">Manage</button>
+      </div>
+
       <p class="instruction">
         📋 Auto-fill from a job page, or paste the JD text below.
       </p>
 
       <div class="paste-actions">
         <button id="auto-fill-btn" class="secondary-btn small-btn">📋 Auto-fill from this tab</button>
+        <button id="pick-jd-btn" class="secondary-btn small-btn" title="Click an element on the page to capture it">🎯 Pick manually</button>
       </div>
 
       <textarea id="jd-input" maxlength="20000" placeholder="Paste the job description here..."></textarea>
@@ -125,14 +132,40 @@
         <div class="detected-info" id="detected-info"></div>
         <div class="score-reasoning" id="score-reasoning"></div>
         <div class="score-breakdown" id="score-breakdown"></div>
-        <div class="score-disclaimer">For reference · Computed from a 4-dimension rubric</div>
+        <div class="score-disclaimer">For reference · Computed from a 6-dimension rubric</div>
         <div class="cost-display hidden" id="cost-display"></div>
+      </div>
+
+      <!-- Interview Likelihood -->
+      <div class="likelihood-card hidden" id="likelihood-card">
+        <div class="likelihood-header">
+          <div>
+            <div class="likelihood-label">Interview Likelihood</div>
+            <div class="likelihood-tier" id="likelihood-tier">--</div>
+          </div>
+          <div class="likelihood-score" id="likelihood-score">--</div>
+        </div>
+        <div class="likelihood-bar"><div class="likelihood-bar-fill" id="likelihood-bar-fill"></div></div>
+        <div class="likelihood-reasoning" id="likelihood-reasoning"></div>
+        <div class="likelihood-adjustments" id="likelihood-adjustments"></div>
+        <div class="likelihood-disclaimer">Estimate · accounts for competition and ATS realities</div>
       </div>
 
       <!-- Keywords -->
       <section class="result-section">
         <h2>📌 JD Keywords</h2>
         <div class="tag-list" id="keywords"></div>
+      </section>
+
+      <!-- Skills Audit -->
+      <section class="result-section hidden" id="skills-audit-section">
+        <h2>🧭 Skills Coverage</h2>
+        <div class="audit-legend">
+          <span class="audit-chip audit-present">✓ present</span>
+          <span class="audit-chip audit-partial">~ partial</span>
+          <span class="audit-chip audit-missing">✗ missing</span>
+        </div>
+        <div id="skills-audit"></div>
       </section>
 
       <!-- Strengths -->
@@ -158,6 +191,12 @@
       <section class="tab-panel active" id="tab-cl">
         <div id="cl-empty">
           <p class="hint">3 concise paragraphs, English output, with a typewriter streaming effect.</p>
+          <details class="cl-guidance-toggle">
+            <summary>+ Add custom guidance (optional)</summary>
+            <textarea id="cl-guidance" maxlength="500"
+              placeholder="e.g. emphasize my system design experience, mention I'm moving to Sydney, keep tone enthusiastic but not over-the-top..."></textarea>
+            <div class="cl-guidance-count"><span id="cl-guidance-count">0</span> / 500</div>
+          </details>
           <button id="generate-cl-btn" class="primary-btn">Generate Cover Letter</button>
         </div>
         <div id="cl-streaming" class="hidden">
@@ -170,6 +209,12 @@
             <button id="copy-cl-btn" class="secondary-btn">📋 Copy</button>
             <button id="regen-cl-btn" class="secondary-btn">🔄 Regenerate</button>
           </div>
+          <details class="cl-guidance-toggle cl-guidance-regen">
+            <summary>+ Adjust guidance and regenerate</summary>
+            <textarea id="cl-guidance-regen" maxlength="500"
+              placeholder="e.g. more concise, drop paragraph 1, lean harder on Stripe experience..."></textarea>
+            <div class="cl-guidance-count"><span id="cl-guidance-regen-count">0</span> / 500</div>
+          </details>
         </div>
       </section>
 
@@ -213,6 +258,20 @@
       </section>
 
       <button id="back-btn" class="secondary-btn">← Analyze Another JD</button>
+    </div>
+  </div>
+
+  <!-- Toast stack (inline notifications) -->
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <!-- Confirm dialog -->
+  <div id="confirm-dialog" class="confirm-overlay hidden" role="dialog" aria-modal="true">
+    <div class="confirm-card">
+      <div class="confirm-message" id="confirm-message"></div>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="secondary-btn">Cancel</button>
+        <button id="confirm-ok" class="primary-btn small-btn">Confirm</button>
+      </div>
     </div>
   </div>
 

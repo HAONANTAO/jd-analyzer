@@ -50,31 +50,81 @@
     </section>
 
     <section class="card">
-      <h2>3. Your Resume</h2>
+      <h2>3. Your Resumes</h2>
       <p class="hint">
-        ⚡ Upload PDF / DOCX / TXT / MD. Files are parsed locally in your browser
-        and never uploaded to any third-party server.
+        ⚡ Keep one resume per target role (e.g. "Frontend", "Backend", "Manager") and
+        switch between them in the popup. Files are parsed locally — never uploaded
+        anywhere except the AI provider you chose above.
       </p>
 
-      <div class="upload-area" id="upload-area">
-        <input type="file" id="file-input" accept=".pdf,.docx,.txt,.md" hidden>
-        <div class="upload-prompt" id="upload-prompt">
-          <div class="upload-icon">📄</div>
-          <div><strong>Click or drag a file here</strong></div>
-          <div class="hint">Supports PDF / DOCX / TXT / MD</div>
-        </div>
-        <div class="upload-status hidden" id="upload-status"></div>
+      <div class="resume-list" id="resume-list">
+        <!-- entries injected -->
       </div>
 
-      <details class="manual-edit">
-        <summary>Or paste / edit resume text manually</summary>
-        <textarea id="resume" rows="12" placeholder="Resume text will appear here after parsing. You can also edit it directly..."></textarea>
-        <p class="hint" id="resume-stats">Characters: 0</p>
-      </details>
+      <div class="resume-empty hidden" id="resume-empty">
+        <div class="upload-icon">📄</div>
+        <div><strong>No resumes yet</strong></div>
+        <div class="hint">Click "+ Add resume" below to upload your first one.</div>
+      </div>
+
+      <button id="add-resume-btn" class="secondary-btn add-resume-btn">+ Add resume</button>
+
+      <div class="resume-editor hidden" id="resume-editor">
+        <div class="editor-header">
+          <strong id="editor-title">Add resume</strong>
+          <button id="editor-close" class="icon-btn" title="Close">×</button>
+        </div>
+
+        <label class="field-label">Label</label>
+        <input type="text" id="editor-label" placeholder='e.g. "Frontend (React + TS)"' maxlength="60">
+
+        <div class="upload-area" id="upload-area">
+          <input type="file" id="file-input" accept=".pdf,.docx,.txt,.md" hidden>
+          <div class="upload-prompt" id="upload-prompt">
+            <div class="upload-icon">📄</div>
+            <div><strong>Click or drag a file here</strong></div>
+            <div class="hint">Supports PDF / DOCX / TXT / MD</div>
+          </div>
+          <div class="upload-status hidden" id="upload-status"></div>
+        </div>
+
+        <div class="ats-precheck hidden" id="ats-precheck"></div>
+
+        <details class="manual-edit">
+          <summary>Or paste / edit resume text manually</summary>
+          <textarea id="resume" rows="12" placeholder="Resume text will appear here after parsing. You can also edit it directly..."></textarea>
+          <p class="hint" id="resume-stats">Characters: 0</p>
+        </details>
+
+        <div class="editor-actions">
+          <button id="editor-cancel" class="secondary-btn">Cancel</button>
+          <button id="editor-save" class="primary-btn small-btn">Save resume</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Preferences</h2>
+      <label class="field-label">Explanation language</label>
+      <div class="radio-group radio-group-inline">
+        <label><input type="radio" name="explanationLanguage" value="en" checked> <span>English</span></label>
+        <label><input type="radio" name="explanationLanguage" value="zh"> <span>简体中文</span></label>
+      </div>
+      <p class="hint">
+        Cover letters are always written in English (matching most JDs). This setting controls
+        the language of reasoning, suggestions, interview hints, and ATS issues.
+      </p>
+
+      <label class="field-label" style="margin-top:14px;">Theme</label>
+      <div class="radio-group radio-group-inline">
+        <label><input type="radio" name="theme" value="system" checked> <span>System</span></label>
+        <label><input type="radio" name="theme" value="light"> <span>Light</span></label>
+        <label><input type="radio" name="theme" value="dark"> <span>Dark</span></label>
+      </div>
     </section>
 
     <div class="actions">
-      <button id="save-btn" class="primary-btn">Save</button>
+      <button id="save-btn" class="primary-btn">Save settings</button>
       <span id="save-status"></span>
     </div>
 
@@ -89,7 +139,7 @@
         ·
         <a href="https://github.com/aarontao/jd-analyzer" target="_blank">GitHub</a>
         ·
-        <span>v1.1.0</span>
+        <span>v1.2.0</span>
       </p>
     </footer>
   </div>

@@ -14,21 +14,28 @@ A privacy-first Chrome extension for job seekers. Open any job posting, click *A
 ## ✨ Features
 
 **Analysis**
-- 📊 **Match Score (0-100)** with a transparent 4-dimension rubric (skills · experience · industry · soft skills)
+- 📊 **Match Score (0-100)** with a transparent 6-dimension rubric (skills · experience · education · industry · location/authorization · soft skills) and per-dimension progress bars
+- 🎯 **Interview Likelihood** — a separate calibrated estimate that accounts for competition (FAANG-tier, seniority) and ATS realities, with itemised +/− adjustments so you can see exactly what's helping or hurting
+- 🧭 **Skills Coverage Audit** — every JD-required skill classified as must-have / nice-to-have and present / partial / missing, with the evidence quoted from your resume
 - 📌 **Keyword Extraction** — top skills/tools from the JD
 - ✅ **Strength Analysis** — what aligns
 - 📉 **Skill Gap Detection** with priority and concrete remediation
 
 **Generators**
-- ✍️ **Cover Letter** — streamed in English, 3 paragraphs, copy-ready
-- 📝 **Resume Optimization Tips** — line-by-line rewrites + ATS-friendliness score
+- ✍️ **Cover Letter** — streamed in English with optional custom guidance ("emphasize my system design experience…"), 3 paragraphs, copy-ready
+- 📝 **Resume Optimization Tips** — line-by-line rewrites + a real **structural ATS score** computed from the source file (multi-column layout, tables, images detected at parse time — not guessed)
 - 🎤 **Interview Prediction** — 8 technical + 2 behavioral questions with hints
+- 🔗 **Learning resources for skill gaps** — each missing skill links out to a specific named course / book / docs (via verified Google-search redirect, no hallucinated URLs)
 
-**Workflow** *(new in v1.1)*
+**Workflow** *(new in v1.2)*
+- 👥 **Multiple resume profiles** — keep "Frontend", "Backend", "Manager" versions and switch with one click in the popup
+- 🌏 **Bilingual mode** — pick English or 简体中文 for reasoning, suggestions, interview hints (cover letter stays English)
+- 🌓 **Dark mode** — system / light / dark toggle
 - 📋 **One-click JD auto-fill** from LinkedIn, Seek, Indeed, Lever, Greenhouse, Ashby, Workable, Glassdoor (plus selection + generic fallbacks)
-- 🕒 **Recent analyses** — last 5 analyses saved locally; click to revisit instantly
+- 🕒 **Recent analyses** — last 8 analyses saved locally; click to revisit, hover to delete
 - 💰 **Cost transparency** — exact USD cost + token counts after every call
-- 🔔 **Resume staleness reminder** when the saved resume is older than 90 days
+- 🔔 **Resume staleness reminder** when the active resume is older than 90 days
+- 🛡️ **In-flight protection** — rapid double-clicks won't fire duplicate AI calls
 
 ## 🔒 Privacy
 
@@ -134,11 +141,13 @@ npm test
 - [x] Auto-extraction from LinkedIn / Seek / Indeed and other major boards *(v1.1)*
 - [x] Per-call cost transparency *(v1.1)*
 - [x] Local analysis history *(v1.1)*
-- [ ] Multi-resume profiles (frontend / backend / fullstack variants)
+- [x] Multi-resume profiles *(v1.2)*
+- [x] Dark mode *(v1.2)*
+- [x] Localization (English / 简体中文) *(v1.2)*
+- [x] Real structural ATS detection *(v1.2)*
+- [x] Learning-resource links for missing skills *(v1.2)*
 - [ ] Job application tracker (status, follow-ups, reminders)
 - [ ] Export cover letter as formatted PDF
-- [ ] Dark mode
-- [ ] Localization (zh-CN, ja, etc.)
 - [ ] Mock interview chat mode
 
 ## 🤝 Contributing
