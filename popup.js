@@ -215,9 +215,10 @@ async function init() {
 
   showState("paste");
 
-  // If the user finished a click-to-pick session in the page,
-  // their captured JD is waiting in storage — drop it into the textarea.
-  await consumePendingJd();
+  // If the in-page panel already analyzed a JD, show that result directly —
+  // no re-analysis. Otherwise fall back to a captured-but-not-analyzed JD.
+  const hadAnalysis = await consumePendingAnalysis();
+  if (!hadAnalysis) await consumePendingJd();
 }
 
 let systemThemeMq = null;
@@ -452,6 +453,30 @@ async function pickJdManually() {
     console.error("[JD Analyzer] pick failed", err);
     showToast("Couldn't start picker. Some sites block extensions.", { tone: "error" });
   }
+}
+
+// ============== Consume a full analysis done in the in-page panel ==============
+// The content script's "Analyze JD" panel stores { jdText, analysis, at } in
+// chrome.storage.local. When the popup opens we render that result directly so
+// the user doesn't pay for / wait through a second analysis.
+async function consumePendingAnalysis() {
+  const { pendingAnalysis } = await chrome.storage.local.get("pendingAnalysis");
+  if (!pendingAnalysis?.analysis || !pendingAnalysis?.jdText) return false;
+  // Stale after 10 minutes — assume the user moved on.
+  if (pendingAnalysis.at && Date.now() - pendingAnalysis.at > 10 * 60 * 1000) {
+    await chrome.storage.local.remove("pendingAnalysis");
+    return false;
+  }
+  cachedJDText = pendingAnalysis.jdText;
+  cachedAnalysis = pendingAnalysis.analysis;
+  jdInput.value = pendingAnalysis.jdText;
+  charCount.textContent = `${pendingAnalysis.jdText.length} characters`;
+  renderResult(cachedAnalysis);
+  resetAllTabs();
+  showState("result");
+  await chrome.storage.local.remove("pendingAnalysis");
+  showToast("✓ Showing the analysis from the page", { tone: "info", duration: 3000 });
+  return true;
 }
 
 // ============== Consume a JD captured via click-to-pick ==============
