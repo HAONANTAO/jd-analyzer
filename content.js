@@ -142,7 +142,15 @@
             color:#6b7280;margin:0 0 6px;">${esc(text)}</div>`;
   }
 
-  function renderResult(panel, data) {
+  // Human-readable label for where the JD text came from — lets the user
+  // spot a bad extraction (e.g. grabbed nav/footer) at a glance.
+  const SOURCE_LABELS = {
+    linkedin: "LinkedIn JD section",
+    "linkedin-heading": "About-the-job heading",
+    selection: "your text selection"
+  };
+
+  function renderResult(panel, data, jd) {
     const title = [data.detectedJobTitle, data.detectedCompany && data.detectedCompany !== "unknown"
       ? `@ ${data.detectedCompany}` : ""].filter(Boolean).join(" ");
     const il = data.interviewLikelihood || {};
@@ -166,7 +174,8 @@
 
     panel.innerHTML = panelHeader() + `
       <div style="padding:14px;overflow-y:auto;">
-        ${title ? `<div style="font-weight:600;font-size:14px;margin-bottom:10px;">${esc(title)}</div>` : ""}
+        ${title ? `<div style="font-weight:600;font-size:14px;margin-bottom:2px;">${esc(title)}</div>` : ""}
+        ${jd ? `<div style="font-size:10px;color:#9ca3af;margin-bottom:10px;">extracted ${jd.text.length.toLocaleString()} chars · ${esc(SOURCE_LABELS[jd.source] || jd.source)}</div>` : ""}
 
         <div style="display:flex;gap:28px;margin-bottom:6px;">
           <div>
@@ -310,7 +319,7 @@
         return;
       }
       lastJdText = jd.text; // enable the Advanced cards to reuse this JD
-      renderResult(panel, resp.data);
+      renderResult(panel, resp.data, jd);
       // Hand the result to the popup (best-effort) so opening it shows the same
       // analysis instead of a blank paste screen — no re-analysis, no extra cost.
       try {
