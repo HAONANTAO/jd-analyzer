@@ -359,5 +359,68 @@
     document.body.appendChild(btn);
   }
 
-  injectLauncher();
+  function removeLauncher() {
+    document.getElementById(BTN_ID)?.remove();
+  }
+
+  // ============== SPA-aware mounting ==============
+  // LinkedIn is a single-page app: navigating between jobs (or in from the feed)
+  // does NOT reload the page, so the content script only runs once. We watch for
+  // client-side navigations and show/hide the launcher accordingly — the user
+  // never has to refresh the page.
+
+  function isJobPage() {
+    return /\/jobs\//.test(location.pathname) ||
+           new URLSearchParams(location.search).has("currentJobId");
+  }
+
+  // Identifies "which job" we're on, so we can tell a real job change apart from
+  // LinkedIn's noisy spurious pushState calls (filters, tracking params, etc.).
+  function jobKey() {
+    const m = location.pathname.match(/\/jobs\/view\/(\d+)/);
+    if (m) return "view:" + m[1];
+    const cj = new URLSearchParams(location.search).get("currentJobId");
+    if (cj) return "current:" + cj;
+    return location.pathname;
+  }
+
+  let lastJobKey = jobKey();
+
+  function syncLauncher() {
+    if (isJobPage()) injectLauncher();
+    else removeLauncher();
+  }
+
+  function onLocationChange() {
+    const key = jobKey();
+    if (key !== lastJobKey) {
+      // Moved to a different job (or off jobs entirely): the open panel and the
+      // cached JD are now stale — drop them so nothing shows wrong data.
+      lastJobKey = key;
+      closePanel();
+      lastJdText = null;
+    }
+    syncLauncher();
+  }
+
+  // Detect SPA navigation: patch history.pushState/replaceState + listen to popstate.
+  (function watchSpaNav() {
+    const fire = () => window.dispatchEvent(new Event("jda:locationchange"));
+    for (const method of ["pushState", "replaceState"]) {
+      const original = history[method];
+      history[method] = function (...args) {
+        const result = original.apply(this, args);
+        fire();
+        return result;
+      };
+    }
+    window.addEventListener("popstate", fire);
+    let debounce = null;
+    window.addEventListener("jda:locationchange", () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(onLocationChange, 300); // LinkedIn fires several in a row
+    });
+  })();
+
+  syncLauncher();
 })();
