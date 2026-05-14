@@ -15,7 +15,17 @@ import { AppError, ErrorType, fromException, serializeError } from "./lib/errors
 import { tryParseJSON } from "./lib/json.js";
 import { estimateCost, formatCost } from "./lib/pricing.js";
 import { ensureMigrated, appendHistory, makeHistoryEntry, getActiveResume } from "./lib/storage.js";
-import { deriveAtsAssessment } from "./lib/resumeParser.js";
+
+// resumeParser.js statically imports vendor/pdf.min.mjs, which contains a
+// top-level await. Top-level await is disallowed in a service worker's static
+// module graph — a static import here makes SW registration fail outright
+// (this is exactly why v1.2.0 was broken). We load it dynamically on first use
+// (RESUME_TIPS only) so it never enters the SW startup path.
+let _resumeParserPromise = null;
+function getResumeParser() {
+  if (!_resumeParserPromise) _resumeParserPromise = import("./lib/resumeParser.js");
+  return _resumeParserPromise;
+}
 
 ensureMigrated().catch(err => console.warn("[JD Analyzer] migration failed", err));
 
@@ -124,6 +134,7 @@ async function handleAnalyze({ jdText }) {
 
 async function handleResumeTips({ jdText, analysis }) {
   const ctx = await loadContext();
+  const { deriveAtsAssessment } = await getResumeParser();
   const atsAssessment = deriveAtsAssessment(ctx.resumeMeta?.atsSignals);
   const { data, usage } = await callAIWithJSONRetry(
     ctx,
