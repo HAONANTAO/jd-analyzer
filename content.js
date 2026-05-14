@@ -16,6 +16,10 @@
   const PANEL_ID = "jda-v13-panel";
   const MIN_JD_CHARS = 200;
 
+  // Holds the JD text from the last successful analysis so the on-demand
+  // "Advanced" cards (red flags, etc.) can re-use it without re-extracting.
+  let lastJdText = null;
+
   // LinkedIn rotates exact class names; use attribute-contains selectors plus an
   // "About the job" heading heuristic so extraction survives DOM reshuffles.
   const LINKEDIN_SELECTORS = [
@@ -149,40 +153,45 @@
     const tierColor = { low: "#b91c1c", moderate: "#c77e20", strong: "#10726b", very_strong: "#15803d" };
 
     // 6-dimension score breakdown — each value is a string like "X/35 - explanation".
+    // We show only the "X/35" part inline — the explanations were too verbose.
     const BD_LABELS = {
       skills: "Skills", experience: "Experience", education: "Education",
-      industry: "Industry", authorization: "Authorization", softSkills: "Soft skills"
+      industry: "Industry", authorization: "Authorization", softSkills: "Soft"
     };
-    const bdRows = Object.keys(BD_LABELS).filter(k => bd[k]).map(k => `
-      <div style="margin-bottom:7px;">
-        <strong style="font-size:12px;">${esc(BD_LABELS[k])}</strong>
-        <div style="color:#6b7280;font-size:12px;line-height:1.45;">${esc(bd[k])}</div>
-      </div>`).join("");
+    const bdCompact = Object.keys(BD_LABELS).filter(k => bd[k]).map(k => {
+      const scorePart = String(bd[k]).split(/\s+[-–—]\s+/)[0].trim();
+      return `<span style="white-space:nowrap;"><strong>${esc(BD_LABELS[k])}</strong> ` +
+             `<span style="color:#6b7280;">${esc(scorePart)}</span></span>`;
+    }).join(`<span style="color:#d1d5db;"> · </span>`);
 
     panel.innerHTML = panelHeader() + `
       <div style="padding:14px;overflow-y:auto;">
         ${title ? `<div style="font-weight:600;font-size:14px;margin-bottom:10px;">${esc(title)}</div>` : ""}
 
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
-          <span style="font-size:32px;font-weight:700;color:#0a66c2;">${esc(data.matchScore ?? "--")}</span>
-          <span style="color:#6b7280;">/ 100 match</span>
+        <div style="display:flex;gap:28px;margin-bottom:6px;">
+          <div>
+            <div><span style="font-size:30px;font-weight:700;color:#0a66c2;">${esc(data.matchScore ?? "--")}</span><span style="color:#9ca3af;font-size:13px;"> /100</span></div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;">Resume match</div>
+          </div>
+          ${il.score != null ? `
+          <div>
+            <div><span style="font-size:30px;font-weight:700;color:${tierColor[il.tier] || "#1a1a1a"};">${esc(il.score)}</span><span style="color:#9ca3af;font-size:13px;">%</span></div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;">Interview chance</div>
+          </div>` : ""}
         </div>
         ${data.matchReasoning ? `<div style="color:#4b5563;font-size:12px;margin-bottom:14px;">${esc(data.matchReasoning)}</div>` : ""}
 
-        ${bdRows ? sectionLabel("Score breakdown") + `<div style="margin-bottom:14px;">${bdRows}</div>` : ""}
+        ${bdCompact ? sectionLabel("Score breakdown") + `<div style="font-size:12px;line-height:1.9;margin-bottom:14px;">${bdCompact}</div>` : ""}
 
         ${strengths.length ? sectionLabel("Strengths") + `
           <ul style="margin:0 0 14px;padding-left:18px;color:#15803d;">
             ${strengths.map(s => `<li style="margin-bottom:4px;color:#1a1a1a;">${esc(s)}</li>`).join("")}
           </ul>` : ""}
 
-        ${il.score != null ? `
+        ${(il.reasoning || adjustments.length) ? `
           <div style="padding:10px 12px;background:#f8f9fb;border-radius:8px;margin-bottom:14px;">
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:3px;">Interview likelihood</div>
-            <div style="font-weight:600;color:${tierColor[il.tier] || "#1a1a1a"};">
-              ${esc(il.score)}/100 · ${esc((il.tier || "").replace("_", " "))}
-            </div>
-            ${il.reasoning ? `<div style="color:#6b7280;font-size:12px;margin-top:4px;">${esc(il.reasoning)}</div>` : ""}
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:3px;">Why this interview chance</div>
+            ${il.reasoning ? `<div style="color:#6b7280;font-size:12px;">${esc(il.reasoning)}</div>` : ""}
             ${adjustments.length ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px;">
               ${adjustments.map(a => {
                 const neg = /^\s*[-−–]/.test(String(a));
@@ -200,11 +209,80 @@
             </li>`).join("")}
           </ul>` : ""}
 
+        ${sectionLabel("Advanced — click to run (1 extra call each)")}
+        <div id="jda-v13-advanced" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+          <button type="button" data-feature="red_flags"
+            style="padding:6px 12px;border:1px solid #e5e7eb;border-radius:999px;
+                   background:#fff;color:#1a1a1a;font:500 12px/1 inherit;cursor:pointer;">
+            🚩 Red flags
+          </button>
+        </div>
+        <div id="jda-v13-adv-output" style="margin-bottom:14px;"></div>
+
         <div style="border-top:1px solid #e5e7eb;padding-top:10px;color:#9ca3af;font-size:11px;">
           Open the JD Analyzer popup for cover letter, resume tips & interview prep.
         </div>
       </div>`;
     wireClose(panel);
+    wireAdvanced(panel);
+  }
+
+  // ============== Advanced (on-demand) cards ==============
+  function wireAdvanced(panel) {
+    const bar = panel.querySelector("#jda-v13-advanced");
+    const out = panel.querySelector("#jda-v13-adv-output");
+    if (!bar || !out) return;
+    bar.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("[data-feature]");
+      if (!btn || btn.disabled) return;
+      const feature = btn.getAttribute("data-feature");
+      if (!lastJdText) {
+        out.innerHTML = `<div style="color:#b91c1c;font-size:12px;">No JD loaded — run Analyze JD first.</div>`;
+        return;
+      }
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = "Running…";
+      out.innerHTML = `<div style="color:#6b7280;font-size:12px;">Analyzing…</div>`;
+      try {
+        const resp = await chrome.runtime.sendMessage({
+          type: "PRO_FEATURE",
+          payload: { feature, jdText: lastJdText }
+        });
+        if (!resp) {
+          out.innerHTML = `<div style="color:#b91c1c;font-size:12px;">No response — try again.</div>`;
+        } else if (!resp.success) {
+          out.innerHTML = `<div style="color:#b91c1c;font-size:12px;">${esc(resp.error?.message || "Failed")}</div>`;
+        } else if (feature === "red_flags") {
+          renderRedFlags(out, resp.data);
+        }
+      } catch (err) {
+        const invalidated = /context invalidated|message port closed/i.test(err?.message || "");
+        out.innerHTML = `<div style="color:#b91c1c;font-size:12px;">${
+          invalidated ? "Extension was reloaded — refresh this page (⌘R) and try again."
+                      : esc(err?.message || "Something went wrong")
+        }</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
+    });
+  }
+
+  function renderRedFlags(out, data) {
+    const flags = data.flags || [];
+    const sevColor = { high: "#b91c1c", medium: "#c77e20", low: "#6b7280" };
+    out.innerHTML = `
+      <div style="padding:10px 12px;background:#f8f9fb;border-radius:8px;">
+        ${sectionLabel("Red flags")}
+        ${data.summary ? `<div style="color:#4b5563;font-size:12px;margin-bottom:8px;">${esc(data.summary)}</div>` : ""}
+        ${flags.length ? `<ul style="margin:0;padding-left:18px;">
+          ${flags.map(f => `<li style="margin-bottom:5px;color:#1a1a1a;font-size:12px;">
+            <strong style="color:${sevColor[f.severity] || "#1a1a1a"};">${esc((f.severity || "").toUpperCase())}</strong>
+            · ${esc(f.text)}
+          </li>`).join("")}
+        </ul>` : `<div style="color:#15803d;font-size:12px;">No notable red flags. ✓</div>`}
+      </div>`;
   }
 
   // ============== Analyze flow ==============
@@ -231,6 +309,7 @@
           resp.error?.hint || "Open the JD Analyzer popup to check your settings.");
         return;
       }
+      lastJdText = jd.text; // enable the Advanced cards to reuse this JD
       renderResult(panel, resp.data);
       // Hand the result to the popup (best-effort) so opening it shows the same
       // analysis instead of a blank paste screen — no re-analysis, no extra cost.
