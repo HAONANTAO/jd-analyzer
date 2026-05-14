@@ -182,6 +182,24 @@ Return JSON only:
 If there are no notable red flags, return an empty flags array and say so in the summary.`;
 }
 
+function salaryPrompt(jdText) {
+  return `Assess the compensation in this job description against the market.
+Extract the role, seniority, and location from the JD text below.
+You do NOT have live market data — give a best-effort estimate from general
+knowledge and make clear it is an estimate.
+
+JD:
+${jdText}
+
+Return JSON only:
+{
+  "stated": "the compensation the JD explicitly states, verbatim — or null if none stated",
+  "marketEstimate": "your estimated typical market range for this role + seniority + location",
+  "verdict": "below_market" | "at_market" | "above_market" | "not_stated" | "unclear",
+  "note": "1-2 sentences — is the pay fair, and what should the candidate know?"
+}`;
+}
+
 // Generic dispatcher — add a new `feature` branch + prompt to extend.
 async function handleProFeature({ feature, jdText }) {
   if (!jdText || jdText.length < 100) {
@@ -191,6 +209,9 @@ async function handleProFeature({ feature, jdText }) {
   if (feature === "red_flags") {
     prompt = redFlagsPrompt(jdText);
     maxTokens = 1200;
+  } else if (feature === "salary_check") {
+    prompt = salaryPrompt(jdText);
+    maxTokens = 600;
   } else {
     throw new AppError(ErrorType.UNKNOWN, `Unknown advanced feature: ${feature}`);
   }

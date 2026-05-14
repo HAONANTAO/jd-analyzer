@@ -225,6 +225,11 @@
                    background:#fff;color:#1a1a1a;font:500 12px/1 inherit;cursor:pointer;">
             🚩 Red flags
           </button>
+          <button type="button" data-feature="salary_check"
+            style="padding:6px 12px;border:1px solid #e5e7eb;border-radius:999px;
+                   background:#fff;color:#1a1a1a;font:500 12px/1 inherit;cursor:pointer;">
+            💰 Salary check
+          </button>
         </div>
         <div id="jda-v13-adv-output" style="margin-bottom:14px;"></div>
 
@@ -264,6 +269,8 @@
           out.innerHTML = `<div style="color:#b91c1c;font-size:12px;">${esc(resp.error?.message || "Failed")}</div>`;
         } else if (feature === "red_flags") {
           renderRedFlags(out, resp.data);
+        } else if (feature === "salary_check") {
+          renderSalary(out, resp.data);
         }
       } catch (err) {
         const invalidated = /context invalidated|message port closed/i.test(err?.message || "");
@@ -291,6 +298,28 @@
             · ${esc(f.text)}
           </li>`).join("")}
         </ul>` : `<div style="color:#15803d;font-size:12px;">No notable red flags. ✓</div>`}
+      </div>`;
+  }
+
+  function renderSalary(out, data) {
+    const verdictColor = {
+      below_market: "#b91c1c", at_market: "#10726b",
+      above_market: "#15803d", not_stated: "#6b7280", unclear: "#6b7280"
+    };
+    const verdictLabel = {
+      below_market: "Below market", at_market: "At market",
+      above_market: "Above market", not_stated: "Not stated in JD", unclear: "Unclear"
+    };
+    out.innerHTML = `
+      <div style="padding:10px 12px;background:#f8f9fb;border-radius:8px;">
+        ${sectionLabel("Salary check")}
+        <div style="font-weight:600;color:${verdictColor[data.verdict] || "#1a1a1a"};margin-bottom:6px;">
+          ${esc(verdictLabel[data.verdict] || data.verdict || "—")}
+        </div>
+        ${data.stated ? `<div style="font-size:12px;margin-bottom:3px;"><strong>JD states:</strong> ${esc(data.stated)}</div>` : ""}
+        ${data.marketEstimate ? `<div style="font-size:12px;margin-bottom:6px;"><strong>Market estimate:</strong> ${esc(data.marketEstimate)}</div>` : ""}
+        ${data.note ? `<div style="color:#6b7280;font-size:12px;">${esc(data.note)}</div>` : ""}
+        <div style="color:#9ca3af;font-size:10px;margin-top:6px;">Estimate from the model's general knowledge — not live market data.</div>
       </div>`;
   }
 
