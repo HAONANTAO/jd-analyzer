@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "JD Analyzer — AI Resume & JD Match",
   "short_name": "JD Analyzer",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Match your resume to any job in seconds. Get score, gaps, cover letter, resume tips & interview questions.",
   "author": "Aaron Tao",
   "homepage_url": "https://github.com/aarontao/jd-analyzer",
@@ -24,6 +24,13 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://*.linkedin.com/jobs/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "options_page": "options.html",
   "icons": {
     "16": "icons/icon16.png",
