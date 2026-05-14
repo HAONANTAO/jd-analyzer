@@ -156,6 +156,49 @@ async function handleInterview({ jdText, analysis }) {
   return { ...data, _meta: buildMeta(ctx, usage) };
 }
 
+// ============== Advanced (on-demand) features ==============
+// Each "Advanced" card in the in-page panel fires one of these on click.
+// Prompts are inline (no new imports — keeps the SW module graph minimal).
+const PRO_FEATURE_SYSTEM =
+  "You are a blunt, experienced career advisor reviewing job postings. " +
+  "Respond in valid JSON only — no markdown fences, no preamble, no extra prose.";
+
+function redFlagsPrompt(jdText) {
+  return `Analyze this job description for red flags — signs the role or company might be a poor place to work.
+Look for: layoff signals, vague responsibilities, unrealistic requirements, buzzword overload
+("rockstar", "ninja", "wear many hats"), unpaid trials, "fast-paced" used as a warning,
+missing or evasive compensation, and poor-management signals.
+
+JD:
+${jdText}
+
+Return JSON only:
+{
+  "flags": [
+    { "severity": "high" | "medium" | "low", "text": "one concrete concern, quoting the JD where possible" }
+  ],
+  "summary": "1-sentence overall read — is this a normal JD or are there real concerns?"
+}
+If there are no notable red flags, return an empty flags array and say so in the summary.`;
+}
+
+// Generic dispatcher — add a new `feature` branch + prompt to extend.
+async function handleProFeature({ feature, jdText }) {
+  if (!jdText || jdText.length < 100) {
+    throw new AppError(ErrorType.UNKNOWN, "JD text is missing or too short to analyze.");
+  }
+  let prompt, maxTokens;
+  if (feature === "red_flags") {
+    prompt = redFlagsPrompt(jdText);
+    maxTokens = 1200;
+  } else {
+    throw new AppError(ErrorType.UNKNOWN, `Unknown advanced feature: ${feature}`);
+  }
+  const ctx = await loadContext();
+  const { data, usage } = await callAIWithJSONRetry(ctx, PRO_FEATURE_SYSTEM, prompt, maxTokens);
+  return { ...data, _meta: buildMeta(ctx, usage) };
+}
+
 async function handleCoverLetterStream(payload, port) {
   const { jdText, analysis, guidance } = payload;
   try {
@@ -190,6 +233,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         data = await handleResumeTips(request.payload);
       } else if (request.type === "INTERVIEW_QUESTIONS") {
         data = await handleInterview(request.payload);
+      } else if (request.type === "PRO_FEATURE") {
+        data = await handleProFeature(request.payload);
       } else {
         throw new AppError(ErrorType.UNKNOWN, `Unknown request type: ${request.type}`);
       }
